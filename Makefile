@@ -7,8 +7,10 @@ FUSESOC_FLAGS = $(addprefix --flag ,$(EXTRA_FLAGS))
 
 .PHONY: sim sim-pipeline sim-core
 sim: sim-core
+simn: sim-ncore
 sim-pipeline: $(TARGET_DIR)/muntjac_pipeline
 sim-core: $(TARGET_DIR)/muntjac_core
+sim-ncore: $(TARGET_DIR)/muntjac_ncore
 
 .PHONY: clean
 clean:
