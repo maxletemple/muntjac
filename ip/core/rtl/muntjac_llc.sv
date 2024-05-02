@@ -180,6 +180,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
     logic writable;
     // Whether this cache line is valid at all.
     logic valid;
+    logic [7:0] metadata;
   } tag_t;
 
   //////////////
@@ -1328,6 +1329,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
             device_c_mult[DeviceCIdxWbBase].address = {wb_address_q, {LineWidth{1'b0}}};
             device_c_mult[DeviceCIdxWbBase].corrupt = 1'b0;
             device_c_mult[DeviceCIdxWbBase].data = host_c.data;
+            device_c_mult[DeviceCIdxWbBase].metadata = host_c.metadata;
 
             // Hold the beat until forwarded.
             if (device_c_ready_mult[DeviceCIdxWbBase]) begin
@@ -1885,6 +1887,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               host_d_mult[HostDIdxAcq].denied = 1'b0;
               host_d_mult[HostDIdxAcq].corrupt = 1'b0;
               host_d_mult[HostDIdxAcq].data = host_c.data;
+              host_d_mult[HostDIdxAcq].metadata = host_c.metadata;
 
               // Hold the beat until forwarded.
               if (host_d_ready_mult[HostDIdxAcq]) begin
@@ -1919,6 +1922,8 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               acq_beat_written_d = 1'b0;
               acq_beat_forwarded_d = 1'b0;
               acq_beat_acked_d = 1'b0;
+
+              acq_tag_d.metadata = host_c.metadata;
 
               if (host_c_last) begin
                 if (host_c.opcode == ProbeAckData && acq_opcode_q inside {Get, AcquireBlock} && acq_size_q == LineWidth) begin
@@ -2060,6 +2065,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
           host_d_mult[HostDIdxAcq].denied = 1'b0;
           host_d_mult[HostDIdxAcq].corrupt = 1'b0;
           host_d_mult[HostDIdxAcq].data = acq_data_skid_valid ? acq_data_skid : data_rdata;
+          host_d_mult[HostDIdxAcq].metadata = acq_tag_q.metadata;
 
           if (!acq_rdata_valid_q) begin
             data_arb_req[DataArbIdxAcq] = 1'b1;

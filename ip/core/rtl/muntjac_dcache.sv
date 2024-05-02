@@ -319,6 +319,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     logic writable;
     logic dirty;
     logic valid;
+    logic [`TL_METADATA_WIDTH - 1: 0] metadata;
   } tag_t;
 
   // #endregion
@@ -953,6 +954,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         mem_c.address = {wb_address_q, 6'd0};
         mem_c.corrupt = 1'b0;
         mem_c.data = wb_data_skid_valid ? wb_data_skid : data_read_data_wide;
+        mem_c.metadata = hit_tag.metadata;
 
         if (mem_c_ready) begin
           wb_index_d = wb_index_q + 1;
@@ -1156,6 +1158,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
             refill_tag_write_data.writable = refill_fifo_beat.param == tl_pkg::toT;
             refill_tag_write_data.dirty = 1'b0;
             refill_tag_write_data.valid = 1'b1;
+            refill_tag_write_data.metadata = refill_fifo_beat.metadata;
           end
 
           if (refill_fifo_ready) begin
@@ -1918,7 +1921,8 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
             if (op_q[1]) begin
               // Write data and make tag dirty.
               access_data_write_req = 1'b1;
-              access_tag_write_req = !hit_tag.dirty;
+              access_tag_write_req = 1'b1; //!hit_tag.dirty;
+              access_tag_write_data.metadata = hit_tag.metadata + 1;
             end
           end
 
