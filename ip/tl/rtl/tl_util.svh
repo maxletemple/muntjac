@@ -5,6 +5,7 @@
 // 4096 bytes so size is 12). The usual value we use is 3 for TL-UH and TL-C link, but
 // we prefer to fix it since it is just an extra bit and usually can be removed by optimiser.
 `define TL_SIZE_WIDTH 4
+`define TL_METADATA_WIDTH 8
 
 // Struct definitions for each channel.
 // We define them just as structs, and it's upon the user to typedef them or use them
@@ -40,6 +41,7 @@
     logic               [ADDR_WIDTH-1:0] address; \
     logic                                corrupt; \
     logic               [DATA_WIDTH-1:0] data   ; \
+    logic       [`TL_METADATA_WIDTH-1:0] metadata; \
   }
 
 `define TL_D_STRUCT(DATA_WIDTH, ADDR_WIDTH, SOURCE_WIDTH, SINK_WIDTH) \
@@ -52,6 +54,7 @@
     logic                                denied ; \
     logic                                corrupt; \
     logic               [DATA_WIDTH-1:0] data   ; \
+    logic       [`TL_METADATA_WIDTH-1:0] metadata; \
   }
 
 `define TL_E_STRUCT(DATA_WIDTH, ADDR_WIDTH, SOURCE_WIDTH, SINK_WIDTH) \
@@ -69,10 +72,10 @@
     ((ADDR_WIDTH)+(`TL_SIZE_WIDTH)+(SOURCE_WIDTH)+6)
 
 `define TL_C_WIDTH(DATA_WIDTH, ADDR_WIDTH, SOURCE_WIDTH, SINK_WIDTH) \
-    ((DATA_WIDTH)+(ADDR_WIDTH)+(`TL_SIZE_WIDTH)+(SOURCE_WIDTH)+7)
+    ((DATA_WIDTH)+(ADDR_WIDTH)+(`TL_SIZE_WIDTH)+(SOURCE_WIDTH)+7 + (`TL_METADATA_WIDTH))
 
 `define TL_D_WIDTH(DATA_WIDTH, ADDR_WIDTH, SOURCE_WIDTH, SINK_WIDTH) \
-    ((DATA_WIDTH)+(`TL_SIZE_WIDTH)+(SOURCE_WIDTH)+(SINK_WIDTH)+8)
+    ((DATA_WIDTH)+(`TL_SIZE_WIDTH)+(SOURCE_WIDTH)+(SINK_WIDTH)+8+(`TL_METADATA_WIDTH))
 
 `define TL_E_WIDTH(DATA_WIDTH, ADDR_WIDTH, SOURCE_WIDTH, SINK_WIDTH) \
     (SINK_WIDTH)

@@ -66,6 +66,7 @@ module tl_source_shifter #(
   assign device_c.address = host_c.address;
   assign device_c.corrupt = host_c.corrupt;
   assign device_c.data    = host_c.data;
+  assign device_c.metadata= host_c.metadata;
 
   assign device_c.source = SourceBase | host_c.source;
 
@@ -83,6 +84,7 @@ module tl_source_shifter #(
   assign host_d.denied  = device_d.denied;
   assign host_d.corrupt = device_d.corrupt;
   assign host_d.data    = device_d.data;
+  assign host_d.metadata= device_d.metadata;
 
   assign host_d.source = device_d.source & SourceMask;
 
