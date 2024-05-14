@@ -348,6 +348,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
 
   logic        resp_valid;
   logic [63:0] resp_value;
+  logic [7:0]  resp_metadata;
   logic        ex_valid;
   exception_t  ex_exception;
 
@@ -359,9 +360,11 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     if (!rst_ni) begin
       cache_d2h_o.resp_valid <= 1'b0;
       cache_d2h_o.resp_value <= 'x;
+      cache_d2h_o.resp_metadata <= 'x;
     end else begin
       cache_d2h_o.resp_valid <= resp_valid;
       cache_d2h_o.resp_value <= resp_value;
+      cache_d2h_o.resp_metadata <= resp_metadata;
     end
   end
 
@@ -1801,6 +1804,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     cache_d2h_o.req_ready = 1'b0;
     resp_valid = 1'b0;
     resp_value = 'x;
+    resp_metadata = 'x;
     ex_valid = 1'b0;
     ex_exception = exception_t'('x);
 
@@ -1916,6 +1920,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
                 .size_ext (size_ext_q)
             ) : 0;
             state_d = StateIdle;
+            resp_metadata = hit_tag.metadata;
 
             // MEM_STORE/MEM_SC/MEM_AMO
             if (op_q[1]) begin

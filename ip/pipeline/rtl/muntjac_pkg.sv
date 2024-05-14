@@ -57,7 +57,8 @@ typedef enum logic [6:0] {
   OPCODE_BRANCH       = 7'b1100011,
   OPCODE_JALR         = 7'b1100111,
   OPCODE_JAL          = 7'b1101111,
-  OPCODE_SYSTEM       = 7'b1110011
+  OPCODE_SYSTEM       = 7'b1110011,
+  OPCODE_META         = 7'b0001011
 } opcode_e;
 
 //////////////////////////////////
@@ -423,7 +424,8 @@ typedef enum logic [3:0] {
   OP_MUL,
   OP_DIV,
   OP_FP,
-  OP_SYSTEM
+  OP_SYSTEM,
+  OP_META
 } op_type_e;
 
 // ALU operations
@@ -509,6 +511,10 @@ typedef enum logic [1:0] {
   SizeExtSigned
 } size_ext_e;
 
+typedef enum logic [1:0] {
+  LOAD_META
+} meta_op_e;
+
 // Debug information used to track the core's progress.
 // TODO: Consider expanding this to meet the full RVFI specification.
 //       https://github.com/SymbioticEDA/riscv-formal/blob/master/docs/rvfi.md
@@ -556,11 +562,13 @@ typedef struct packed {
   logic adder_use_imm;
 
   // Whether ALU ops or adder should use rs2 or immediate.
-  logic use_imm;
+  logic use_imm; 
 
   // Size of operation.
   // For ALU, MUL, DIV, this currently can only be word (10) or dword (11).
   logic [1:0] size;
+  
+  meta_op_e meta_op;
 
   // Type of size extension to be perforemd.
   // Currently only used by MEM unit.
@@ -667,6 +675,8 @@ typedef struct packed {
 
   logic            resp_valid;
   logic [63:0]     resp_value;
+
+  logic [7:0]      resp_metadata;
 
   logic            ex_valid;
   exception_t      ex_exception;

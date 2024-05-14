@@ -78,7 +78,8 @@ module muntjac_backend import muntjac_pkg::*; #(
     FU_MEM,
     FU_MUL,
     FU_DIV,
-    FU_FPU
+    FU_FPU,
+    FU_META
   } func_unit_e;
 
   /////////////
@@ -610,6 +611,7 @@ module muntjac_backend import muntjac_pkg::*; #(
   // Results to mux from
   logic mem_valid;
   logic [63:0] mem_data;
+  logic [7:0]  meta_resp;
   logic mul_valid;
   logic [63:0] mul_data;
   logic div_valid;
@@ -666,6 +668,10 @@ module muntjac_backend import muntjac_pkg::*; #(
         ex1_data_valid = fpu_valid && ex2_select_q != FU_FPU;
         ex1_data = fpu_data;
         ex1_fflags = fpu_fflags;
+      end
+      FU_META: begin
+        ex1_data_valid = mem_valid && ex2_select_q != FU_META;
+        ex1_data = meta_resp;
       end
       default: begin
         ex1_data_valid = 1'bx;
@@ -765,6 +771,9 @@ module muntjac_backend import muntjac_pkg::*; #(
           end
           OP_FP: begin
             ex1_select_d = FU_FPU;
+          end
+          OP_META: begin
+            ex1_select_d = FU_META;
           end
           default:;
         endcase
@@ -879,6 +888,10 @@ module muntjac_backend import muntjac_pkg::*; #(
       default: begin
         ex2_data_valid = 1'bx;
         ex2_data = 'x;
+      end
+      FU_META: begin
+        ex2_data_valid = mem_valid;
+        ex2_data = meta_resp;
       end
     endcase
   end
@@ -1055,7 +1068,7 @@ module muntjac_backend import muntjac_pkg::*; #(
   //
 
   priv_lvl_e data_prv;
-  assign dcache_h2d_o.req_valid    = ex_issue && de_ex_decoded.op_type == OP_MEM;
+  assign dcache_h2d_o.req_valid    = ex_issue && (de_ex_decoded.op_type == OP_MEM || de_ex_decoded.op_type == OP_META);
   assign dcache_h2d_o.req_op       = de_ex_decoded.mem_op;
   assign dcache_h2d_o.req_amo      = de_ex_decoded.exception.tval[31:25];
   assign dcache_h2d_o.req_address  = sum;
@@ -1072,6 +1085,7 @@ module muntjac_backend import muntjac_pkg::*; #(
   assign mem_trap  = dcache_d2h_i.ex_exception;
   assign mem_notif_ready = dcache_d2h_i.notif_ready;
   assign mem_ready = dcache_d2h_i.req_ready;
+  assign meta_resp = dcache_d2h_i.resp_metadata;
 
   assign dcache_h2d_o.notif_valid = sys_state_q == SYS_ST_IDLE && (sys_state_d == SYS_ST_SFENCE_VMA || sys_state_d == SYS_ST_SATP_CHANGED);
   assign dcache_h2d_o.notif_reason = sys_state_d == SYS_ST_SFENCE_VMA;
