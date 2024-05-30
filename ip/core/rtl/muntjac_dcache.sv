@@ -24,8 +24,8 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     input  logic rst_ni,
 
     // Interface to CPU
-    input  dcache_h2d_t cache_h2d_i,
-    output dcache_d2h_t cache_d2h_o,
+    (* mark_debug = "true" *) input  dcache_h2d_t cache_h2d_i,
+    (* mark_debug = "true" *) output dcache_d2h_t cache_d2h_o,
 
     // Hardware performance monitor events
     output logic hpm_access_o,
@@ -339,6 +339,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
   wire            req_sum      = cache_h2d_i.req_sum;
   wire            req_mxr      = cache_h2d_i.req_mxr;
   wire [63:0]     req_atp      = cache_h2d_i.req_atp;
+  wire            req_ismeta   = cache_h2d_i.req_ismeta;
 
   logic flush_valid;
   logic flush_ready;
@@ -577,7 +578,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
   logic                              tag_read_req;
   logic [LogicAddrLen-LineWidth-1:0] tag_addr;
   logic [NumWays-1:0]                tag_write_ways;
-  tag_t                              tag_write_data;
+  (* mark_debug = "true" *)  tag_t                              tag_write_data;
   logic                              tag_read_physical;
   tag_t                              tag_read_data [NumWays];
 
@@ -1767,7 +1768,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     StateException
   } state_e;
 
-  state_e state_q = StateIdle, state_d;
+  (* mark_debug = "true" *) state_e state_q = StateIdle, state_d;
 
   // Information about the exception to be reported in StateException
   exc_cause_e ex_code_q, ex_code_d;
@@ -1783,6 +1784,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
   size_ext_e   size_ext_q, size_ext_d;
   mem_op_e     op_q, op_d;
   logic [6:0]  amo_q, amo_d;
+  logic        is_meta_q, is_meta_d;
 
   wire [63:0] amo_result = do_amo_op(hit_data, value_q, mask_q, amo_q);
 
@@ -1846,6 +1848,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     state_d = state_q;
     address_d = address_q;
     value_d = value_q;
+    is_meta_d = is_meta_q;
     mask_d = mask_q;
     size_d = size_q;
     size_ext_d = size_ext_q;
@@ -1925,9 +1928,13 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
             // MEM_STORE/MEM_SC/MEM_AMO
             if (op_q[1]) begin
               // Write data and make tag dirty.
-              access_data_write_req = 1'b1;
               access_tag_write_req = 1'b1; //!hit_tag.dirty;
-              access_tag_write_data.metadata = hit_tag.metadata + 1;
+              access_data_write_req = 1'b1;
+              if (is_meta_q) begin
+                access_tag_write_data.metadata = value_q;
+              end else begin
+                access_tag_write_data.metadata = hit_tag.metadata;
+              end
             end
           end
 
@@ -2033,8 +2040,9 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
       op_d = req_op;
       // Translate MEM_STORE/MEM_SC to AMOSWAP, so we can reuse the AMOALU.
       amo_d = !req_op[0] ? 7'b0000100 : req_amo;
-      value_d = align_store(req_value, req_address[2:0]);
+      value_d = req_ismeta ? req_value : align_store(req_value, req_address[2:0]);
       mask_d = align_strb(req_address[2:0], req_size);
+      is_meta_d = req_ismeta;
 
       // Load reservation. The reservation is single-use; it is cleared by any other memory access.
       reserved_d = req_op == MEM_LR;
@@ -2077,6 +2085,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
       state_q <= StateIdle;
       address_q <= '0;
       value_q <= 'x;
+      is_meta_q <= 'x;
       mask_q <= 'x;
       size_q <= 'x;
       size_ext_q <= size_ext_e'('x);
@@ -2094,6 +2103,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
       state_q <= state_d;
       address_q <= address_d;
       value_q <= value_d;
+      is_meta_q <= is_meta_d;
       mask_q <= mask_d;
       size_q <= size_d;
       size_ext_q <= size_ext_d;

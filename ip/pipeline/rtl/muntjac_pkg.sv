@@ -512,7 +512,8 @@ typedef enum logic [1:0] {
 } size_ext_e;
 
 typedef enum logic [1:0] {
-  LOAD_META
+  LOAD_META,
+  STORE_META
 } meta_op_e;
 
 // Debug information used to track the core's progress.
@@ -663,6 +664,8 @@ typedef struct packed {
   logic            req_sum;
   logic            req_mxr;
   logic [63:0]     req_atp;
+
+  logic            req_ismeta;
 
   // Notification on SFENCE.VMA
   logic            notif_valid;

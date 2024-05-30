@@ -885,13 +885,13 @@ module muntjac_backend import muntjac_pkg::*; #(
         ex2_data = fpu_data;
         ex2_fflags = fpu_fflags;
       end
-      default: begin
-        ex2_data_valid = 1'bx;
-        ex2_data = 'x;
-      end
       FU_META: begin
         ex2_data_valid = mem_valid;
         ex2_data = meta_resp;
+      end
+      default: begin
+        ex2_data_valid = 1'bx;
+        ex2_data = 'x;
       end
     endcase
   end
@@ -1079,6 +1079,7 @@ module muntjac_backend import muntjac_pkg::*; #(
   assign dcache_h2d_o.req_sum      = status_o.sum;
   assign dcache_h2d_o.req_mxr      = status_o.mxr;
   assign dcache_h2d_o.req_atp      = {data_prv == PRIV_LVL_M ? 4'd0 : satp_o[63:60], satp_o[59:0]};
+  assign dcache_h2d_o.req_ismeta   = de_ex_decoded.op_type == OP_META;
   assign mem_valid = dcache_d2h_i.resp_valid;
   assign mem_data  = dcache_d2h_i.resp_value;
   assign mem_trap_valid = dcache_d2h_i.ex_valid;

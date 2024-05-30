@@ -235,10 +235,25 @@ module muntjac_decoder import muntjac_pkg::*; import muntjac_fpu_pkg::*; #(
 
       OPCODE_META: begin
         decoded_instr_o.op_type = OP_META;
-        decoded_instr_o.mem_op = MEM_LOAD;
-        decoded_instr_o.meta_op = LOAD_META;
-        rd_enable = 1'b1;
-        rs1_enable = 1'b1;
+        unique case (funct3)
+          3'b000: begin
+            decoded_instr_o.mem_op = MEM_LOAD;
+            decoded_instr_o.meta_op = LOAD_META;
+            decoded_instr_o.size = 2'b00;
+            rd_enable = 1'b1;
+            rs1_enable = 1'b1;
+          end
+          3'b001: begin
+            decoded_instr_o.mem_op = MEM_STORE;
+            decoded_instr_o.meta_op = STORE_META;
+            decoded_instr_o.size = 2'b00;
+            rs1_enable = 1'b1;
+            rs2_enable = 1'b1;
+          end
+          default: begin
+            illegal_instr = 1'b1;
+          end
+        endcase
       end
 
       /////////
@@ -669,7 +684,7 @@ module muntjac_decoder import muntjac_pkg::*; import muntjac_fpu_pkg::*; #(
     decoded_instr_o.adder_use_imm = 1'bx;
     decoded_instr_o.use_imm = 1'bx;
     unique case (opcode)
-      OPCODE_LOAD, OPCODE_LOAD_FP, OPCODE_STORE, OPCODE_STORE_FP, OPCODE_AMO, OPCODE_LUI, OPCODE_JALR: begin
+      OPCODE_LOAD, OPCODE_LOAD_FP, OPCODE_STORE, OPCODE_STORE_FP, OPCODE_AMO, OPCODE_LUI, OPCODE_JALR, OPCODE_META: begin
         decoded_instr_o.adder_use_pc = 1'b0;
         decoded_instr_o.adder_use_imm = 1'b1;
       end
@@ -722,7 +737,7 @@ module muntjac_decoder import muntjac_pkg::*; import muntjac_fpu_pkg::*; #(
         decoded_instr_o.immediate = j_imm;
       end
       // Atomics. Decode immediate to zero so that adder will produce rs1.
-      OPCODE_AMO: begin
+      OPCODE_AMO, OPCODE_META: begin
         decoded_instr_o.immediate = '0;
       end
       default:;
