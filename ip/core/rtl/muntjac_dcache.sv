@@ -1925,6 +1925,9 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
             state_d = StateIdle;
             resp_metadata = hit_tag.metadata;
 
+            access_tag_write_req = 1'b1;
+            access_tag_write_data.metadata = hit_tag.metadata + 1;
+
             // MEM_STORE/MEM_SC/MEM_AMO
             if (op_q[1]) begin
               // Write data and make tag dirty.
