@@ -655,6 +655,7 @@ typedef struct packed {
   logic            req_sum;
   logic            req_mxr;
   logic [63:0]     req_atp;
+  logic [7:0]      req_metadata;
 
   // Notification on SFENCE.VMA
   logic            notif_valid;
@@ -667,6 +668,7 @@ typedef struct packed {
 
   logic            resp_valid;
   logic [63:0]     resp_value;
+  logic [7:0]      resp_metadata;
 
   logic            ex_valid;
   exception_t      ex_exception;

@@ -338,6 +338,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
   wire            req_sum      = cache_h2d_i.req_sum;
   wire            req_mxr      = cache_h2d_i.req_mxr;
   wire [63:0]     req_atp      = cache_h2d_i.req_atp;
+  wire [7:0]      req_metadata = cache_h2d_i.req_metadata;
 
   logic flush_valid;
   logic flush_ready;
@@ -347,6 +348,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
 
   logic        resp_valid;
   logic [63:0] resp_value;
+  logic [7:0]  resp_metadata;
   logic        ex_valid;
   exception_t  ex_exception;
 
@@ -358,9 +360,11 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     if (!rst_ni) begin
       cache_d2h_o.resp_valid <= 1'b0;
       cache_d2h_o.resp_value <= 'x;
+      cache_d2h_o.resp_metadata <= 'x;
     end else begin
       cache_d2h_o.resp_valid <= resp_valid;
       cache_d2h_o.resp_value <= resp_value;
+      cache_d2h_o.resp_metadata <= resp_metadata;
     end
   end
 
@@ -531,6 +535,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
   logic [SetsWidth+3-1:0] access_data_write_addr;
   logic [WaysWidth-1:0]   access_data_write_way;
   logic [63:0]            access_data_write_data;
+  logic [7:0]             access_data_write_metadata;
 
   logic                   wb_data_read_req;
   logic                   wb_data_read_gnt;
@@ -548,6 +553,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
   logic [SetsWidth+3-1:0]         refill_data_write_addr;
   logic [WaysWidth-1:0]           refill_data_write_way;
   logic [NumInterleave-1:0][63:0] refill_data_write_data;
+  logic [7:0]                     refill_data_write_metadata;
 
   logic                      probe_tag_read_req;
   logic                      probe_tag_read_gnt;
@@ -584,6 +590,9 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
   logic [NumInterleave-1:0][63:0] data_write_data;
   logic                           data_wide;
   logic [63:0]                    data_read_data [NumWays];
+
+  logic [7:0]                     metadata_write_data;
+  logic [7:0]                     data_read_metadata [NumWays];
 
   always_comb begin
     refill_tag_write_gnt = 1'b0;
@@ -678,6 +687,8 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     data_write_data = 'x;
     data_wide = 1'b0;
 
+    metadata_write_data = 'x;
+
     priority case (1'b1)
       refill_data_write_req: begin
         refill_data_write_gnt = 1'b1;
@@ -685,6 +696,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         data_addr = refill_data_write_addr;
         data_way = refill_data_write_way;
         data_write_data = refill_data_write_data;
+        // TODO metadata_write_data = refill_data_write_metadata;
         data_wide = 1'b1;
       end
 
@@ -693,6 +705,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         data_read_req = 1'b1;
         data_addr = wb_data_read_addr;
         data_way = wb_data_read_way;
+        // TODO metadata_write_data = 
         data_wide = 1'b1;
       end
 
@@ -702,6 +715,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         data_addr = access_data_write_addr;
         data_way = access_data_write_way;
         data_write_data = {NumInterleave{access_data_write_data}};
+        metadata_write_data = access_data_write_metadata;
       end
       // Access logic has lowest read priority so that it prevents the cache from
       // starving other cores.
@@ -709,6 +723,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         access_data_read_gnt = 1'b1;
         data_read_req = 1'b1;
         data_addr = access_data_read_addr;
+        metadata_write_data = access_data_write_metadata;
       end
       default:;
     endcase
@@ -805,6 +820,20 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         .wdata_i (data_write_data_interleave[i & InterleaveMask]),
         .wmask_i ('1),
         .rdata_o (data_read_data_interleave[i])
+    );
+
+    prim_ram_1p #(
+        .Width           (8),
+        .Depth           (2 ** (SetsWidth + 3)),
+        .DataBitsPerMask (8)
+    ) metadata_ram (
+        .clk_i   (clk_i),
+        .req_i   (data_read_req || data_write_req),
+        .write_i (data_write_req && data_write_ways_interleave[i]),
+        .addr_i  (data_addr_effective),
+        .wdata_i (metadata_write_data), // TODO
+        .wmask_i ('1),
+        .rdata_o (data_read_metadata[i])
     );
   end
 
@@ -1118,6 +1147,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     refill_data_write_addr = 'x;
     refill_data_write_way = 'x;
     refill_data_write_data = 'x;
+    refill_data_write_metadata = 'x;
 
     refill_tracker_valid_d = refill_tracker_valid;
     refill_lock_acq = 1'b0;
@@ -1145,6 +1175,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
             refill_data_write_way = refill_req_way;
             refill_data_write_addr = {refill_req_address[SetsWidth-1:0], 3'(refill_fifo_idx << InterleaveWidth)};
             refill_data_write_data = refill_fifo_beat.data;
+            refill_data_write_metadata = refill_fifo_beat.metadata;
           end
 
           // Update the metadata. This should only be done once, we can do it in either time.
@@ -1349,6 +1380,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
 
   wire tag_t hit_tag = tag_read_data[hit_way];
   wire [63:0] hit_data = data_read_data[hit_way];
+  wire [7:0] hit_metadata = data_read_metadata[hit_way];
 
   // #endregion
   ///////////////////////////////////
@@ -1772,6 +1804,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
 
   logic [63:0] address_q, address_d;
   logic [63:0] value_q, value_d;
+  logic [7:0]  metadata_value_q, metadata_value_d;
   logic [7:0]  mask_q, mask_d;
   logic [1:0]  size_q, size_d;
   size_ext_e   size_ext_q, size_ext_d;
@@ -1798,6 +1831,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     cache_d2h_o.req_ready = 1'b0;
     resp_valid = 1'b0;
     resp_value = 'x;
+    resp_metadata = 'x;
     ex_valid = 1'b0;
     ex_exception = exception_t'('x);
 
@@ -1835,10 +1869,12 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
     access_data_write_addr = address_q[3+:SetsWidth+3];
     access_data_write_req = 1'b0;
     access_data_write_data = combine_word(hit_data, amo_result, mask_q);
+    access_data_write_metadata = metadata_value_q;
 
     state_d = state_q;
     address_d = address_q;
     value_d = value_q;
+    metadata_value_d = metadata_value_q;
     mask_d = mask_q;
     size_d = size_q;
     size_ext_d = size_ext_q;
@@ -1913,6 +1949,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
                 .size_ext (size_ext_q)
             ) : 0;
             state_d = StateIdle;
+            resp_metadata = hit_metadata;
 
             // MEM_STORE/MEM_SC/MEM_AMO
             if (op_q[1]) begin
@@ -2022,6 +2059,8 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
       size_d = req_size;
       size_ext_d = req_size_ext;
       op_d = req_op;
+
+      metadata_value_d = req_metadata;
       // Translate MEM_STORE/MEM_SC to AMOSWAP, so we can reuse the AMOALU.
       amo_d = !req_op[0] ? 7'b0000100 : req_amo;
       value_d = align_store(req_value, req_address[2:0]);
@@ -2068,6 +2107,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
       state_q <= StateIdle;
       address_q <= '0;
       value_q <= 'x;
+      metadata_value_q <= 'x;
       mask_q <= 'x;
       size_q <= 'x;
       size_ext_q <= size_ext_e'('x);
@@ -2085,6 +2125,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
       state_q <= state_d;
       address_q <= address_d;
       value_q <= value_d;
+      metadata_value_q <= metadata_value_d;
       mask_q <= mask_d;
       size_q <= size_d;
       size_ext_q <= size_ext_d;
