@@ -835,6 +835,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
   logic [DataArbNums-1:0]                            data_arb_write;
   logic [DataArbNums-1:0][DataWidthInBytes-1:0]      data_arb_wmask;
   logic [DataArbNums-1:0][DataWidth-1:0]             data_arb_wdata;
+  logic [DataArbNums-1:0][7:0]                       metadata_arb_wdata;
 
   logic                 tag_req;
   logic [SetsWidth-1:0] tag_set;
@@ -854,6 +855,9 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
   logic [DataWidthInBytes-1:0] data_wmask;
   logic [DataWidth-1:0]        data_wdata;
   logic [DataWidth-1:0]        data_rdata;
+
+  logic [7:0]                  metadata_wdata;
+  logic [7:0]                  metadata_rdata;
 
   always_comb begin
     tag_arb_gnt = '0;
@@ -896,6 +900,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
     data_offset = 'x;
     data_write = 1'b0;
     data_wdata = 'x;
+    metadata_wdata = 'x;
     data_wmask = 'x;
 
     // Arbitrate data memory access.
@@ -910,6 +915,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
         data_write = data_arb_write[i];
         data_wmask = data_arb_wmask[i];
         data_wdata = data_arb_wdata[i];
+        metadata_wdata = metadata_arb_wdata[i];
       end
     end
   end
@@ -1007,6 +1013,20 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
     .wdata_i (data_wdata),
     .wmask_i (data_wmask_expanded),
     .rdata_o (data_rdata)
+  );
+
+  prim_ram_1p #(
+    .Width           (8),
+    .Depth           (2 ** (WaysWidth + SetsWidth + OffsetWidth)),
+    .DataBitsPerMask (8)
+  ) tag_ram (
+    .clk_i   (clk_i),
+    .req_i   (data_req),
+    .write_i (data_write),
+    .addr_i  ({data_way, data_set, data_offset}),
+    .wdata_i (metadata_wdata),
+    .wmask_i ('1),
+    .rdata_o (metadata_rdata)
   );
 
   /////////////////////
@@ -1172,6 +1192,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
     data_arb_write[DataArbIdxWbBase] = 1'b0;
     data_arb_wmask[DataArbIdxWbBase] = 'x;
     data_arb_wdata[DataArbIdxWbBase] = 'x;
+    metadata_arb_wdata[DataArbIdxWbBase] = 'x;
 
     wb_tracker[0].valid = wb_state_q != WbStateIdle;
     wb_tracker[0].address = wb_address_q;
@@ -1309,6 +1330,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
             data_arb_write[DataArbIdxWbBase] = 1'b1;
             data_arb_wmask[DataArbIdxWbBase] = '1;
             data_arb_wdata[DataArbIdxWbBase] = host_c.data;
+            metadata_arb_wdata[DataArbIdxWbBase] = host_c.metadata;
 
             // Hold the beat until written back.
             if (data_arb_gnt[DataArbIdxWbBase]) begin
@@ -1328,6 +1350,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
             device_c_mult[DeviceCIdxWbBase].address = {wb_address_q, {LineWidth{1'b0}}};
             device_c_mult[DeviceCIdxWbBase].corrupt = 1'b0;
             device_c_mult[DeviceCIdxWbBase].data = host_c.data;
+            device_c_mult[DeviceCIdxWbBase].metadata = host_c.metadata;
 
             // Hold the beat until forwarded.
             if (device_c_ready_mult[DeviceCIdxWbBase]) begin
@@ -1348,6 +1371,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
             host_d_mult[HostDIdxWbBase].denied = 1'b0;
             host_d_mult[HostDIdxWbBase].corrupt = 1'b0;
             host_d_mult[HostDIdxWbBase].data = 'x;
+            host_d_mult[HostDIdxWbBase].metadata = 'x;
 
             // Hold the beat until acknowledge is sent.
             if (host_d_ready_mult[HostDIdxWbBase]) begin
@@ -1404,6 +1428,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
         device_c_mult[DeviceCIdxWbBase].address = {wb_address_q, {LineWidth{1'b0}}};
         device_c_mult[DeviceCIdxWbBase].corrupt = 1'b0;
         device_c_mult[DeviceCIdxWbBase].data = wb_data_skid_valid ? wb_data_skid : data_rdata;
+        device_c_mult[DeviceCIdxWbBase].metadata = metadata_rdata;
 
         device_c_valid_mult[DeviceCIdxWbBase] = wb_rdata_valid_q;
         if (!wb_rdata_valid_q) begin
@@ -1437,6 +1462,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
         device_c_mult[DeviceCIdxWbBase].address = {wb_address_q, {LineWidth{1'b0}}};
         device_c_mult[DeviceCIdxWbBase].corrupt = 1'b0;
         device_c_mult[DeviceCIdxWbBase].data = 'x;
+        device_c_mult[DeviceCIdxWbBase].metadata = 'x;
 
         if (device_c_ready_mult[DeviceCIdxWbBase]) begin
           wb_state_d = wb_param_q == NtoN ? WbStateDone : WbStateUpdateTag;
@@ -1679,6 +1705,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
       data_arb_write[DataArbIdxAcq] = 1'b0;
       data_arb_wmask[DataArbIdxAcq] = 'x;
       data_arb_wdata[DataArbIdxAcq] = 'x;
+      metadata_arb_wdata[DataArbIdxAcq] = 'x;
 
       acq_state_d = acq_state_q;
       acq_opcode_d = acq_opcode_q;
@@ -1862,6 +1889,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               data_arb_write[DataArbIdxAcq] = 1'b1;
               data_arb_wmask[DataArbIdxAcq] = '1;
               data_arb_wdata[DataArbIdxAcq] = host_c.data;
+              metadata_arb_wdata[DataArbIdxAcq] = host_c.metadata;
 
               // Hold the beat until written back.
               if (data_arb_gnt[DataArbIdxAcq]) begin
@@ -1885,6 +1913,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               host_d_mult[HostDIdxAcq].denied = 1'b0;
               host_d_mult[HostDIdxAcq].corrupt = 1'b0;
               host_d_mult[HostDIdxAcq].data = host_c.data;
+              host_d_mult[HostDIdxAcq].metadata = host_c.metadata;
 
               // Hold the beat until forwarded.
               if (host_d_ready_mult[HostDIdxAcq]) begin
@@ -1905,6 +1934,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               host_d_mult[HostDIdxAcq].denied = 1'b0;
               host_d_mult[HostDIdxAcq].corrupt = 1'b0;
               host_d_mult[HostDIdxAcq].data = 'x;
+              host_d_mult[HostDIdxAcq].metadata = 'x;
 
               // Hold the beat until acknowledge is sent.
               if (host_d_ready_mult[HostDIdxAcq]) begin
@@ -1979,6 +2009,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               data_arb_write[DataArbIdxAcq] = 1'b1;
               data_arb_wmask[DataArbIdxAcq] = '1;
               data_arb_wdata[DataArbIdxAcq] = device_d.data;
+              metadata_arb_wdata[DataArbIdxAcq] = device_d.metadata;
 
               // Hold the beat until written back.
               if (data_arb_gnt[DataArbIdxAcq]) begin
@@ -2001,6 +2032,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               host_d_mult[HostDIdxAcq].denied = 1'b0;
               host_d_mult[HostDIdxAcq].corrupt = 1'b0;
               host_d_mult[HostDIdxAcq].data = device_d.data;
+              host_d_mult[HostDIdxAcq].metadata = device_d.metadata;
 
               // Hold the beat until forwarded.
               if (host_d_ready_mult[HostDIdxAcq]) begin
@@ -2060,6 +2092,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
           host_d_mult[HostDIdxAcq].denied = 1'b0;
           host_d_mult[HostDIdxAcq].corrupt = 1'b0;
           host_d_mult[HostDIdxAcq].data = acq_data_skid_valid ? acq_data_skid : data_rdata;
+          host_d_mult[HostDIdxAcq].metadata = metadata_rdata;
 
           if (!acq_rdata_valid_q) begin
             data_arb_req[DataArbIdxAcq] = 1'b1;
@@ -2116,6 +2149,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               host_d_mult[HostDIdxAcq].denied = 1'b0;
               host_d_mult[HostDIdxAcq].corrupt = 1'b0;
               host_d_mult[HostDIdxAcq].data = 'x;
+              host_d_mult[HostDIdxAcq].metadata = 'x;
 
               if (host_d_ready_mult[HostDIdxAcq]) begin
                 acq_beat_acked_d = 1'b1;
@@ -2270,6 +2304,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
       data_arb_write[DataArbIdxRel] = 1'b0;
       data_arb_wmask[DataArbIdxRel] = '1;
       data_arb_wdata[DataArbIdxRel] = 'x;
+      metadata_arb_wdata[DataArbIdxRel] = 'x;
 
       rel_state_d = rel_state_q;
       rel_addr_sent_d = rel_addr_sent_q;
@@ -2343,6 +2378,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               data_arb_addr[DataArbIdxRel] = {rel_address_q[NonBurstSize+OffsetWidth+:SetsWidth], host_c_idx};
               data_arb_write[DataArbIdxRel] = 1'b1;
               data_arb_wdata[DataArbIdxRel] = host_c.data;
+              metadata_arb_wdata[DataArbIdxRel] = host_c.metadata;
 
               // Hold the beat until written back.
               if (data_arb_gnt[DataArbIdxRel]) begin
@@ -2363,6 +2399,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               host_d_mult[HostDIdxRel].denied = 1'b0;
               host_d_mult[HostDIdxRel].corrupt = 1'b0;
               host_d_mult[HostDIdxRel].data = 'x;
+              host_d_mult[HostDIdxRel].metadata = 'x;
 
               // Hold the beat until acknowledge is sent.
               if (host_d_ready_mult[HostDIdxRel]) begin

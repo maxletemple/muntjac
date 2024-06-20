@@ -696,7 +696,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         data_addr = refill_data_write_addr;
         data_way = refill_data_write_way;
         data_write_data = refill_data_write_data;
-        // TODO metadata_write_data = refill_data_write_metadata;
+        metadata_write_data = refill_data_write_metadata;
         data_wide = 1'b1;
       end
 
@@ -705,7 +705,6 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         data_read_req = 1'b1;
         data_addr = wb_data_read_addr;
         data_way = wb_data_read_way;
-        // TODO metadata_write_data = 
         data_wide = 1'b1;
       end
 
@@ -831,7 +830,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         .req_i   (data_read_req || data_write_req),
         .write_i (data_write_req && data_write_ways_interleave[i]),
         .addr_i  (data_addr_effective),
-        .wdata_i (metadata_write_data), // TODO
+        .wdata_i (metadata_write_data),
         .wmask_i ('1),
         .rdata_o (data_read_metadata[i])
     );
