@@ -982,6 +982,7 @@ module muntjac_dcache import muntjac_pkg::*; import tl_pkg::*; # (
         mem_c.address = {wb_address_q, 6'd0};
         mem_c.corrupt = 1'b0;
         mem_c.data = wb_data_skid_valid ? wb_data_skid : data_read_data_wide;
+        mem_c.metadata = data_read_metadata[data_way_latch];
 
         if (mem_c_ready) begin
           wb_index_d = wb_index_q + 1;
