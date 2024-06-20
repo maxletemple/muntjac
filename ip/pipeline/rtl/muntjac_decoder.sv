@@ -233,6 +233,13 @@ module muntjac_decoder import muntjac_pkg::*; import muntjac_fpu_pkg::*; #(
         endcase
       end
 
+      OPCODE_META: begin
+        decoded_instr_o.op_type = OP_META;
+        decoded_instr_o.meta_op = LOAD_META;
+        rd_enable = 1'b1;
+        rs1_enable = 1'b1;
+      end
+
       /////////
       // ALU //
       /////////

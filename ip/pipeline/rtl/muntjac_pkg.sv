@@ -57,7 +57,8 @@ typedef enum logic [6:0] {
   OPCODE_BRANCH       = 7'b1100011,
   OPCODE_JALR         = 7'b1100111,
   OPCODE_JAL          = 7'b1101111,
-  OPCODE_SYSTEM       = 7'b1110011
+  OPCODE_SYSTEM       = 7'b1110011,
+  OPCODE_META         = 7'b0001011
 } opcode_e;
 
 //////////////////////////////////
@@ -423,8 +424,14 @@ typedef enum logic [3:0] {
   OP_MUL,
   OP_DIV,
   OP_FP,
-  OP_SYSTEM
+  OP_SYSTEM,
+  OP_META
 } op_type_e;
+
+// Meta operations
+typedef enum logic [1:0] {
+  LOAD_META
+} meta_op_e;
 
 // ALU operations
 typedef enum logic [2:0] {
@@ -565,6 +572,9 @@ typedef struct packed {
   // Type of size extension to be perforemd.
   // Currently only used by MEM unit.
   size_ext_e size_ext;
+
+  // Meta ops
+  meta_op_e meta_op;
 
   // ALU ops
   alu_op_e alu_op;
