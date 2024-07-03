@@ -234,10 +234,28 @@ module muntjac_decoder import muntjac_pkg::*; import muntjac_fpu_pkg::*; #(
       end
 
       OPCODE_META: begin
-        decoded_instr_o.op_type = OP_META;
-        decoded_instr_o.meta_op = LOAD_META;
-        rd_enable = 1'b1;
-        rs1_enable = 1'b1;
+        unique case (funct3)
+          3'b000: begin
+            decoded_instr_o.op_type = OP_META;
+            decoded_instr_o.meta_op = LOAD_META;
+            rd_enable = 1'b1;
+            rs1_enable = 1'b1;
+          end
+          3'b001: begin
+            decoded_instr_o.op_type = OP_META;
+            decoded_instr_o.meta_op = STORE_META;
+            rs1_enable = 1'b1;
+            rs2_enable = 1'b1;
+            rd_enable = 1'b1;
+          end
+          3'b010: begin
+            decoded_instr_o.op_type = OP_META;
+            decoded_instr_o.meta_op = UEVT_META;
+            rs1_enable = 1'b1;
+            rs2_enable = 1'b1;
+            rd_enable = 1'b1;
+          end
+        endcase
       end
 
       /////////
@@ -686,7 +704,7 @@ module muntjac_decoder import muntjac_pkg::*; import muntjac_fpu_pkg::*; #(
         decoded_instr_o.adder_use_imm = 1'b1;
         decoded_instr_o.use_imm = 1'b0;
       end
-      OPCODE_OP, OPCODE_OP_32: begin
+      OPCODE_OP, OPCODE_OP_32, OPCODE_META: begin
         decoded_instr_o.adder_use_pc = 1'b0;
         decoded_instr_o.adder_use_imm = 1'b0;
         decoded_instr_o.use_imm = 1'b0;
@@ -701,7 +719,7 @@ module muntjac_decoder import muntjac_pkg::*; import muntjac_fpu_pkg::*; #(
     decoded_instr_o.immediate = 'x;
     unique case (opcode)
       // I-type
-      OPCODE_LOAD, OPCODE_LOAD_FP, OPCODE_OP_IMM, OPCODE_OP_IMM_32, OPCODE_JALR: begin
+      OPCODE_LOAD, OPCODE_LOAD_FP, OPCODE_OP_IMM, OPCODE_OP_IMM_32, OPCODE_JALR, OPCODE_META: begin
         decoded_instr_o.immediate = i_imm;
       end
       // U-Type

@@ -75,7 +75,9 @@ module muntjac_backend import muntjac_pkg::*; #(
 
   typedef enum logic [2:0] {
     FU_ALU,
-    FU_META,
+    FU_META_LOAD,
+    FU_META_STORE,
+    FU_META_UEVT,
     FU_MEM,
     FU_MUL,
     FU_DIV,
@@ -90,12 +92,12 @@ module muntjac_backend import muntjac_pkg::*; #(
   logic de_ex_ready;
   decoded_instr_t de_ex_decoded;
   logic [63:0] de_ex_rs1;
-  logic [7:0] de_ex_rs1_metadata;
   logic [63:0] de_ex_rs2;
-  logic [7:0] de_ex_rs2_metadata;
   logic [63:0] de_ex_frs1;
   logic [63:0] de_ex_frs2;
   logic [63:0] de_ex_frs3;
+  logic [7:0] de_ex_rs1_metadata;
+  logic [7:0] de_ex_rs2_metadata;
 
   logic [4:0] de_rs1_select, de_rs2_select;
   csr_num_e de_csr_sel;
@@ -179,6 +181,8 @@ module muntjac_backend import muntjac_pkg::*; #(
   logic [63:0] ex_frs1;
   logic [63:0] ex_frs2;
   logic [63:0] ex_frs3;
+  logic [7:0] ex_rs1_metadata;
+  logic [7:0] ex_rs2_metadata;
 
   logic ex1_pending_q;
   logic ex1_use_frd_q;
@@ -198,10 +202,12 @@ module muntjac_backend import muntjac_pkg::*; #(
     data_hazard_int = 1'b0;
 
     ex_rs1 = de_ex_rs1;
+    ex_rs1_metadata = de_ex_rs1_metadata;
     // RS1 bypass from EX2
     if (ex2_pending_q && !de_ex_decoded.use_frs1 && !ex2_use_frd_q && ex2_rd_q == de_ex_decoded.rs1 && de_ex_decoded.rs1 != 0) begin
       if (ex2_data_valid) begin
         ex_rs1 = ex2_data;
+        ex_rs1_metadata = ex2_metadata_next;
       end
       else begin
         data_hazard_int = 1'b1;
@@ -211,6 +217,7 @@ module muntjac_backend import muntjac_pkg::*; #(
     if (ex1_pending_q && !de_ex_decoded.use_frs1 && !ex1_use_frd_q && ex1_rd_q == de_ex_decoded.rs1 && de_ex_decoded.rs1 != 0) begin
       if (ex1_data_valid) begin
         ex_rs1 = ex1_data;
+        ex_rs1_metadata = ex1_metadata;
       end
       else begin
         data_hazard_int = 1'b1;
@@ -218,10 +225,12 @@ module muntjac_backend import muntjac_pkg::*; #(
     end
 
     ex_rs2 = de_ex_rs2;
+    ex_rs2_metadata = de_ex_rs2_metadata;
     // RS2 bypass from EX2
     if (ex2_pending_q && !de_ex_decoded.use_frs2 && !ex2_use_frd_q && ex2_rd_q == de_ex_decoded.rs2 && de_ex_decoded.rs2 != 0) begin
       if (ex2_data_valid) begin
         ex_rs2 = ex2_data;
+        ex_rs2_metadata = ex2_metadata_next;
       end
       else begin
         data_hazard_int = 1'b1;
@@ -231,6 +240,7 @@ module muntjac_backend import muntjac_pkg::*; #(
     if (ex1_pending_q && !de_ex_decoded.use_frs2 && !ex1_use_frd_q && ex1_rd_q == de_ex_decoded.rs2 && de_ex_decoded.rs2 != 0) begin
       if (ex1_data_valid) begin
         ex_rs2 = ex1_data;
+        ex_rs2_metadata = ex1_metadata;
       end
       else begin
         data_hazard_int = 1'b1;
@@ -632,13 +642,15 @@ module muntjac_backend import muntjac_pkg::*; #(
 
   func_unit_e ex1_select_q;
   logic [63:0] ex1_alu_data_q;
-  logic [7:0] ex1_metadata_calc_q;
+  logic [7:0] ex1_metadata_q;
+  logic [7:0] ex1_event_q;
   muntjac_fpu_pkg::exception_flags_t ex1_alu_fflags_q;
   logic [LogicSextAddrLen-1:0] ex1_pc_q;
 
   func_unit_e ex2_select_q;
   logic [63:0] ex2_alu_data_q;
-  logic [7:0] ex2_metadata_calc_q;
+  logic [7:0] ex2_metadata_q;
+  logic [7:0] ex2_event_q;
   muntjac_fpu_pkg::exception_flags_t ex2_alu_fflags_q;
   logic [LogicSextAddrLen-1:0] ex2_pc_q;
   logic ex2_squashed_q;
@@ -650,15 +662,26 @@ module muntjac_backend import muntjac_pkg::*; #(
 
   always_comb begin
     ex1_fflags = '0;
+    ex1_metadata = ex1_metadata_q;
     unique case (ex1_select_q)
       FU_ALU: begin
         ex1_data_valid = 1'b1;
         ex1_data = ex1_alu_data_q;
         ex1_fflags = ex1_alu_fflags_q;
       end
-      FU_META: begin
+      FU_META_LOAD: begin
         ex1_data_valid = 1'b1;
-        ex1_data = ex1_metadata_calc_q;
+        ex1_data = ex1_metadata_q;
+      end
+      FU_META_STORE: begin
+        ex1_data_valid = 1'b1;
+        ex1_data = ex1_alu_data_q;
+      end
+      FU_META_UEVT: begin
+        ex1_data_valid = 1'b1;
+        ex1_data = ex1_alu_data_q;
+        ex1_fflags = ex1_alu_fflags_q;
+        ex1_metadata = ex1_metadata_q;
       end
       FU_MEM: begin
         // If ex2_select_q matches ex1_select_q, then the valid signal is for EX2, so don;t
@@ -690,6 +713,8 @@ module muntjac_backend import muntjac_pkg::*; #(
   logic ex1_pending_d;
   func_unit_e ex1_select_d;
   logic [63:0] ex1_alu_data_d;
+  logic [7:0] ex1_metadata_d;
+  logic [7:0] ex1_event_d;
   muntjac_fpu_pkg::exception_flags_t ex1_alu_fflags_d;
   logic [LogicSextAddrLen-1:0] ex1_pc_d;
   logic ex1_use_frd_d;
@@ -698,7 +723,6 @@ module muntjac_backend import muntjac_pkg::*; #(
   branch_type_e ex_branch_type_d;
   logic ex1_compressed_q, ex1_compressed_d;
   logic make_fs_dirty;
-  logic [7:0] ex1_metadata_calc_d;
 
   always_comb begin
     ex1_pending_d = ex1_pending_q;
@@ -708,8 +732,9 @@ module muntjac_backend import muntjac_pkg::*; #(
     ex1_pc_d = ex1_pc_q;
     ex1_use_frd_d = ex1_use_frd_q;
     ex1_rd_d = ex1_rd_q;
+    ex1_metadata_d = ex1_metadata_q;
+    ex1_event_d = ex1_event_q;
     ex_expected_pc_d = ex_expected_pc_q;
-    ex1_metadata_calc_d = ex1_metadata_calc_q;
 
     // To avoid train branch predictor multiple times, this signal is only valid for 1 cycle.
     ex_branch_type_d = BRANCH_NONE;
@@ -722,6 +747,7 @@ module muntjac_backend import muntjac_pkg::*; #(
     if (ex1_data_valid) begin
       ex1_select_d = FU_ALU;
       ex1_alu_data_d = ex1_data;
+      ex1_metadata_d = ex1_metadata;
     end
 
     // Reset to default values when the instruction progresses to EX2, or when the MEM
@@ -745,6 +771,8 @@ module muntjac_backend import muntjac_pkg::*; #(
         ex1_rd_d = de_ex_decoded.rd;
         ex1_alu_data_d = 'x;
         ex1_alu_fflags_d = '0;
+        ex1_metadata_d = ex_rs1_metadata;
+        ex1_event_d = '0;
 
         make_fs_dirty = de_ex_decoded.use_frd;
 
@@ -756,8 +784,22 @@ module muntjac_backend import muntjac_pkg::*; #(
             ex1_alu_data_d = alu_result;
           end
           OP_META: begin
-            ex1_metadata_calc_d = de_ex_rs1_metadata;
-            ex1_select_d = FU_META;
+            unique case (de_ex_decoded.meta_op)
+              LOAD_META: begin
+                ex1_select_d = FU_META_LOAD;
+              end
+              STORE_META: begin
+                ex1_select_d = FU_META_STORE;
+                ex1_metadata_d = ex_rs2;
+                ex1_alu_data_d = ex_rs1;
+              end
+              UEVT_META: begin
+                ex1_select_d = FU_META_UEVT;
+                ex1_event_d = 3 + de_ex_decoded.immediate;
+                ex1_alu_data_d = ex_rs1;
+              end
+              default:;
+            endcase
           end
           OP_JUMP: begin
             ex1_alu_data_d = 64'(signed'(npc));
@@ -775,6 +817,17 @@ module muntjac_backend import muntjac_pkg::*; #(
           end
           OP_MEM: begin
             ex1_select_d = FU_MEM;
+            case (de_ex_decoded.mem_op)
+              MEM_LOAD: begin
+                ex1_event_d = 8'h01;
+              end
+              MEM_STORE: begin
+                ex1_event_d = 8'h02;
+              end
+              default: begin
+                ex1_event_d = 8'h00;
+              end
+            endcase
           end
           OP_MUL: begin
             ex1_select_d = FU_MUL;
@@ -838,6 +891,8 @@ module muntjac_backend import muntjac_pkg::*; #(
       ex1_use_frd_q <= 1'b0;
       ex1_rd_q <= '0;
       ex1_alu_data_q <= 'x;
+      ex1_metadata_q <= 'x;
+      ex1_event_q <= 'x;
       ex1_alu_fflags_q <= '0;
       ex1_pc_q <= 'x;
       ex_expected_pc_q <= '0;
@@ -851,7 +906,8 @@ module muntjac_backend import muntjac_pkg::*; #(
       ex1_pending_q <= ex1_pending_d;
       ex1_select_q <= ex1_select_d;
       ex1_alu_data_q <= ex1_alu_data_d;
-      ex1_metadata_calc_q <= ex1_metadata_calc_d;
+      ex1_metadata_q <= ex1_metadata_d;
+      ex1_event_q <= ex1_event_d;
       ex1_alu_fflags_q <= ex1_alu_fflags_d;
       ex1_pc_q <= ex1_pc_d;
       ex1_use_frd_q <= ex1_use_frd_d;
@@ -873,15 +929,20 @@ module muntjac_backend import muntjac_pkg::*; #(
 
   always_comb begin
     ex2_fflags = '0;
+    ex2_metadata = ex2_metadata_q;
     unique case (ex2_select_q)
       FU_ALU: begin
         ex2_data_valid = 1'b1;
         ex2_data = ex2_alu_data_q;
         ex2_fflags = ex2_alu_fflags_q;
       end
-      FU_META: begin
+      FU_META_LOAD: begin
         ex2_data_valid = 1'b1;
-        ex2_data = ex2_metadata_calc_q;
+        ex2_data = ex2_metadata_q;
+      end
+      FU_META_STORE: begin
+        ex2_data_valid = 1'b1;
+        ex2_metadata = ex2_alu_data_q;
       end
       FU_MEM: begin
         ex2_data_valid = mem_valid;
@@ -904,7 +965,6 @@ module muntjac_backend import muntjac_pkg::*; #(
       default: begin
         ex2_data_valid = 1'bx;
         ex2_data = 'x;
-        ex2_metadata = 'x;
       end
     endcase
   end
@@ -912,7 +972,8 @@ module muntjac_backend import muntjac_pkg::*; #(
   logic ex2_pending_d;
   func_unit_e ex2_select_d;
   logic [63:0] ex2_alu_data_d;
-  logic [7:0] ex2_metadata_calc_d;
+  logic [7:0] ex2_metadata_d;
+  logic [7:0] ex2_event_d;
   muntjac_fpu_pkg::exception_flags_t ex2_alu_fflags_d;
   logic [LogicSextAddrLen-1:0] ex2_pc_d;
   logic ex2_use_frd_d;
@@ -926,7 +987,8 @@ module muntjac_backend import muntjac_pkg::*; #(
     ex2_pending_d = ex2_pending_q;
     ex2_select_d = ex2_select_q;
     ex2_alu_data_d = ex2_alu_data_q;
-    ex2_metadata_calc_d = ex2_metadata_calc_q;
+    ex2_metadata_d = ex2_metadata_q;
+    ex2_event_d = ex2_event_q;
     ex2_alu_fflags_d = ex2_alu_fflags_q;
     ex2_pc_d = ex2_pc_q;
     ex2_use_frd_d = ex2_use_frd_q;
@@ -945,7 +1007,6 @@ module muntjac_backend import muntjac_pkg::*; #(
       ex2_use_frd_d = 1'b0;
       ex2_rd_d = '0;
       ex2_alu_data_d = 'x;
-      ex2_metadata_calc_d = 'x;
       ex2_alu_fflags_d = '0;
       ex2_squashed_d = 1'b0;
     end
@@ -961,7 +1022,6 @@ module muntjac_backend import muntjac_pkg::*; #(
       ex2_use_frd_d = 1'b0;
       ex2_rd_d = '0;
       ex2_alu_data_d = 'x;
-      ex2_metadata_calc_d = 'x;
       ex2_alu_fflags_d = '0;
       ex2_squashed_d = 1'b1;
     end
@@ -973,11 +1033,12 @@ module muntjac_backend import muntjac_pkg::*; #(
     if (ex1_pending_q && ex2_ready && !mem_trap_valid) begin
       ex2_pending_d = 1'b1;
       ex2_select_d = ex1_select_q;
+      ex2_metadata_d = ex1_metadata_q;
+      ex2_event_d = ex1_event_q;
       ex2_pc_d = ex1_pc_q;
       ex2_use_frd_d = ex1_use_frd_q;
       ex2_rd_d = ex1_rd_q;
       ex2_alu_data_d = 'x;
-      ex2_metadata_calc_d = ex1_metadata_calc_q;
       ex2_alu_fflags_d = '0;
       ex2_squashed_d = 1'b0;
 `ifdef TRACE_ENABLE
@@ -989,6 +1050,7 @@ module muntjac_backend import muntjac_pkg::*; #(
       if (ex1_data_valid) begin
         ex2_select_d = FU_ALU;
         ex2_alu_data_d = ex1_data;
+        ex2_metadata_d = ex1_metadata;
         ex2_alu_fflags_d = ex1_fflags;
       end
     end
@@ -999,7 +1061,8 @@ module muntjac_backend import muntjac_pkg::*; #(
       ex2_pending_q <= 1'b0;
       ex2_select_q <= FU_ALU;
       ex2_alu_data_q <= 'x;
-      ex2_metadata_calc_q <= 'x;
+      ex2_metadata_q <= 'x;
+      ex2_event_q <= 'x;
       ex2_alu_fflags_q <= '0;
       ex2_pc_q <= 'x;
       ex2_use_frd_q <= 1'b0;
@@ -1013,7 +1076,8 @@ module muntjac_backend import muntjac_pkg::*; #(
       ex2_pending_q <= ex2_pending_d;
       ex2_select_q <= ex2_select_d;
       ex2_alu_data_q <= ex2_alu_data_d;
-      ex2_metadata_calc_q <= ex2_metadata_calc_d;
+      ex2_metadata_q <= ex2_metadata_d;
+      ex2_event_q <= ex2_event_d;
       ex2_alu_fflags_q <= ex2_alu_fflags_d;
       ex2_pc_q <= ex2_pc_d;
       ex2_use_frd_q <= ex2_use_frd_d;
@@ -1099,7 +1163,7 @@ module muntjac_backend import muntjac_pkg::*; #(
   assign dcache_h2d_o.req_sum      = status_o.sum;
   assign dcache_h2d_o.req_mxr      = status_o.mxr;
   assign dcache_h2d_o.req_atp      = {data_prv == PRIV_LVL_M ? 4'd0 : satp_o[63:60], satp_o[59:0]};
-  assign dcache_h2d_o.req_metadata = de_ex_rs2_metadata;
+  assign dcache_h2d_o.req_metadata = ex_rs2_metadata;
   assign mem_valid = dcache_d2h_i.resp_valid;
   assign mem_data  = dcache_d2h_i.resp_value;
   assign mem_metadata = dcache_d2h_i.resp_metadata;
@@ -1110,6 +1174,30 @@ module muntjac_backend import muntjac_pkg::*; #(
 
   assign dcache_h2d_o.notif_valid = sys_state_q == SYS_ST_IDLE && (sys_state_d == SYS_ST_SFENCE_VMA || sys_state_d == SYS_ST_SATP_CHANGED);
   assign dcache_h2d_o.notif_reason = sys_state_d == SYS_ST_SFENCE_VMA;
+
+  //////////////////////////////////////////
+  // State transitiion table instatiation //
+  //////////////////////////////////////////
+
+  logic metadata_event_valid;
+  logic [7:0] ex2_metadata_next;
+  logic [7:0] ex2_event_prev;
+
+  always_comb begin
+    metadata_event_valid = 1'b0;
+    ex2_event_prev = '0;
+    if (ex2_event_q != '0) begin
+      metadata_event_valid = 1'b1;
+      ex2_event_prev = ex2_event_q - 1;
+    end
+  end
+
+  muntjac_metadata_table metadata_table (
+    .valid_i (metadata_event_valid),
+    .state_i (ex2_metadata),
+    .event_i (ex2_event_prev),
+    .state_o (ex2_metadata_next)
+  );
 
   //////////////////////////////////
   // Register file instantiations //
@@ -1126,7 +1214,7 @@ module muntjac_backend import muntjac_pkg::*; #(
     .rmetadata_b_o (de_ex_rs2_metadata),
     .waddr_a_i (ex2_rd_q),
     .wdata_a_i (ex2_data),
-    .wmetadata_a_i (ex2_metadata),
+    .wmetadata_a_i (ex2_metadata_next),
     .we_a_i    (ex2_pending_q && ex2_data_valid && !ex2_use_frd_q)
   );
 

@@ -430,7 +430,9 @@ typedef enum logic [3:0] {
 
 // Meta operations
 typedef enum logic [1:0] {
-  LOAD_META
+  LOAD_META, 
+  STORE_META,
+  UEVT_META
 } meta_op_e;
 
 // ALU operations
