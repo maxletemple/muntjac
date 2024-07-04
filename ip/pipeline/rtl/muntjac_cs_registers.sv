@@ -499,7 +499,7 @@ module muntjac_cs_registers import muntjac_pkg::*; # (
       end
     end
 
-    unique case (1'b1)
+    case (1'b1)
       ex_valid_i: begin
         // Delegate to S-mode if we have an exception on S/U mode and delegation is enabled.
         if (priv_lvl_q != PRIV_LVL_M && is_delegated(ex_exception_i.cause)) begin

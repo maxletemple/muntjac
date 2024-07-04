@@ -463,6 +463,9 @@ module muntjac_backend import muntjac_pkg::*; #(
         sys_issue = 1'b1;
         ex_state_d = ST_SYS;
       end
+      if (metadata_exception) begin
+        ex_state_d = ST_INT;
+      end
     end
 
     if (mem_trap_valid) begin
@@ -754,12 +757,13 @@ module muntjac_backend import muntjac_pkg::*; #(
     // instruction traps regardless whether it is trapped in EX1 or EX2.
     // If it traps in EX1, then we should cancel it. If it traps in EX2, then any pending
     // non-memory instruction should run to completion, and EX2 will pick that up for us.
-    if (ex2_ready || mem_trap_valid) begin
+    if (ex2_ready || mem_trap_valid || metadata_exception) begin
       ex1_pending_d = 1'b0;
       ex1_select_d = FU_ALU;
       ex1_use_frd_d = 1'b0;
       ex1_rd_d = '0;
       ex1_alu_data_d = 'x;
+      ex1_event_d = '0;
     end
 
     unique case (1'b1)
@@ -1182,6 +1186,7 @@ module muntjac_backend import muntjac_pkg::*; #(
   logic metadata_event_valid;
   logic [7:0] ex2_metadata_next;
   logic [7:0] ex2_event_prev;
+  logic metadata_exception;
 
   always_comb begin
     metadata_event_valid = 1'b0;
@@ -1196,7 +1201,8 @@ module muntjac_backend import muntjac_pkg::*; #(
     .valid_i (metadata_event_valid),
     .state_i (ex2_metadata),
     .event_i (ex2_event_prev),
-    .state_o (ex2_metadata_next)
+    .state_o (ex2_metadata_next),
+    .exception_o (metadata_exception)
   );
 
   //////////////////////////////////
@@ -1273,7 +1279,7 @@ module muntjac_backend import muntjac_pkg::*; #(
     .satp_o (satp_o),
     .status_o (status_o),
     .frm_o (frm),
-    .ex_valid_i (mem_trap_valid || exception_issue),
+    .ex_valid_i (mem_trap_valid || exception_issue || metadata_exception),
     .ex_exception_i (mem_trap_valid ? mem_trap : de_ex_decoded.exception),
     .ex_epc_i (mem_trap_valid ? 64'(signed'(ex2_select_q == FU_MEM ? ex2_pc_q : ex1_pc_q)) : de_ex_decoded.pc),
     .ex_tvec_o (exc_tvec_d),
@@ -1315,7 +1321,7 @@ module muntjac_backend import muntjac_pkg::*; #(
     if (!rst_ni) begin
       exc_tvec_q <= 'x;
     end else begin
-      if (mem_trap_valid || exception_issue) begin
+      if (mem_trap_valid || exception_issue || metadata_exception) begin
         exc_tvec_q <= exc_tvec_d;
       end
     end
