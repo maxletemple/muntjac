@@ -361,6 +361,7 @@ module muntjac_backend import muntjac_pkg::*; #(
       OP_SYSTEM: struct_hazard = 1'b1;
       default:;
     endcase
+    if (meta_store_enable) struct_hazard = 1'b1;
   end
 
   //////////////////////////////
@@ -400,6 +401,82 @@ module muntjac_backend import muntjac_pkg::*; #(
       end
       default:;
     endcase
+  end
+
+  ///////////////////////////////////
+  // Metadata store state machine //
+  ///////////////////////////////////
+
+  typedef enum logic [2:0] {
+    META_ST_IDLE,
+    META_ST_PENDING,
+    META_ST_STORE,
+    META_ST_STORE_REPLAY,
+    META_ST_STORE_END
+  } metadata_store_state_e;
+
+  metadata_store_state_e meta_state_q, meta_state_d;
+  logic [63:0] meta_store_address_d, meta_store_address_q;
+  logic [63:0] meta_store_data_d, meta_store_data_q;
+  logic [7:0] meta_store_metadata_d, meta_store_metadata_q;
+  logic meta_store_enable;
+  logic meta_store_pulse;
+
+  always_comb begin
+    meta_state_d = meta_state_q;
+    meta_store_address_d = meta_store_address_q;
+    meta_store_data_d = meta_store_data_q;
+    meta_store_metadata_d = meta_store_metadata_q;
+    meta_store_enable = 1'b0;
+    meta_store_pulse = 1'b0;
+
+    unique case (meta_state_q)
+      META_ST_IDLE: begin
+        if (ex2_metadata != ex2_metadata_next && metadata_event_valid) begin
+          meta_state_d = META_ST_PENDING;
+          meta_store_address_d = 64'h40000000;
+          meta_store_data_d = ex2_data;
+          meta_store_metadata_d = ex2_metadata_next;
+          meta_store_enable = 1'b1;
+        end
+      end
+      META_ST_PENDING: begin
+          meta_store_enable = 1'b1;
+        if (mem_ready) begin
+          meta_state_d = META_ST_STORE;
+          meta_store_pulse = 1'b1;
+        end
+      end
+      META_ST_STORE: begin
+        meta_store_enable = 1'b1;
+        meta_state_d = META_ST_STORE_REPLAY;
+      end
+      META_ST_STORE_REPLAY: begin
+        meta_store_enable = 1'b1;
+        if (mem_ready) begin
+          meta_state_d = META_ST_STORE_END;
+        end
+      end
+      META_ST_STORE_END: begin
+        meta_state_d = META_ST_IDLE;
+      end
+      default:;
+    endcase
+  end
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      meta_state_q <= META_ST_IDLE;
+      meta_store_address_q <= 'x;
+      meta_store_data_q <= 'x;
+      meta_store_metadata_q <= 'x;
+    end
+    else begin
+      meta_state_q <= meta_state_d;
+      meta_store_address_q <= meta_store_address_d;
+      meta_store_data_q <= meta_store_data_d;
+      meta_store_metadata_q <= meta_store_metadata_d;
+    end
   end
 
   ////////////////////////
@@ -786,6 +863,9 @@ module muntjac_backend import muntjac_pkg::*; #(
         unique case (de_ex_decoded.op_type)
           OP_ALU: begin
             ex1_alu_data_d = alu_result;
+            if (de_ex_decoded.rs1 == 5'd0) begin
+              ex1_metadata_d = ex_rs2_metadata;
+            end
           end
           OP_META: begin
             unique case (de_ex_decoded.meta_op)
@@ -1156,18 +1236,18 @@ module muntjac_backend import muntjac_pkg::*; #(
   //
 
   priv_lvl_e data_prv;
-  assign dcache_h2d_o.req_valid    = ex_issue && de_ex_decoded.op_type == OP_MEM;
-  assign dcache_h2d_o.req_op       = de_ex_decoded.mem_op;
-  assign dcache_h2d_o.req_amo      = de_ex_decoded.exception.tval[31:25];
-  assign dcache_h2d_o.req_address  = sum;
-  assign dcache_h2d_o.req_size     = de_ex_decoded.size;
-  assign dcache_h2d_o.req_size_ext = de_ex_decoded.size_ext;
-  assign dcache_h2d_o.req_value    = de_ex_decoded.use_frs2 ? ex_frs2 : ex_rs2;
-  assign dcache_h2d_o.req_prv      = data_prv[0];
-  assign dcache_h2d_o.req_sum      = status_o.sum;
-  assign dcache_h2d_o.req_mxr      = status_o.mxr;
-  assign dcache_h2d_o.req_atp      = {data_prv == PRIV_LVL_M ? 4'd0 : satp_o[63:60], satp_o[59:0]};
-  assign dcache_h2d_o.req_metadata = ex_rs2_metadata;
+  assign dcache_h2d_o.req_valid    = (meta_store_enable ? meta_store_pulse: ex_issue && de_ex_decoded.op_type == OP_MEM);
+  assign dcache_h2d_o.req_op       = (meta_store_enable ? MEM_STORE : de_ex_decoded.mem_op);
+  assign dcache_h2d_o.req_amo      = (meta_store_enable ? '0: de_ex_decoded.exception.tval[31:25]);
+  assign dcache_h2d_o.req_address  = (meta_store_enable ? meta_store_address_q: sum);
+  assign dcache_h2d_o.req_size     = (meta_store_enable ? 3'b010: de_ex_decoded.size);
+  assign dcache_h2d_o.req_size_ext = (meta_store_enable ? SizeExtSigned: de_ex_decoded.size_ext);
+  assign dcache_h2d_o.req_value    = (meta_store_enable ? meta_store_data_q: de_ex_decoded.use_frs2 ? ex_frs2 : ex_rs2);
+  assign dcache_h2d_o.req_prv      = (meta_store_enable ? '1: data_prv[0]);
+  assign dcache_h2d_o.req_sum      = (meta_store_enable ? '0: status_o.sum);
+  assign dcache_h2d_o.req_mxr      = (meta_store_enable ? '0: status_o.mxr);
+  assign dcache_h2d_o.req_atp      = (meta_store_enable ? '0: {data_prv == PRIV_LVL_M ? 4'd0 : satp_o[63:60], satp_o[59:0]});
+  assign dcache_h2d_o.req_metadata = (meta_store_enable ? meta_store_metadata_q: ex_rs2_metadata);
   assign mem_valid = dcache_d2h_i.resp_valid;
   assign mem_data  = dcache_d2h_i.resp_value;
   assign mem_metadata = dcache_d2h_i.resp_metadata;
