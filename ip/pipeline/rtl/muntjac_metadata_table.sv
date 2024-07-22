@@ -12,10 +12,11 @@ module muntjac_metadata_table # ()(
   output logic exception_o
 );
 
+  // Init state is defined in muntjac_pkg.sv
   bit [7:0] state_table [0:3][0:3] = 
-      '{  // 0     1-ex  2     3 
-          '{8'd1, 8'd1, 8'd2, 8'd3}, // load
-          '{8'd0, 8'd2, 8'd2, 8'd3}, // store
+      '{  // 0     1    2     3 
+          '{8'd0, 8'd1, 8'd2, 8'd3}, // load
+          '{8'd0, 8'd1, 8'd2, 8'd3}, // store
           '{8'd1, 8'd1, 8'd2, 8'd3}, // uevt0
           '{8'd0, 8'd1, 8'd2, 8'd3}  // uevt1
       };
