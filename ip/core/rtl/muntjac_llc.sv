@@ -1,5 +1,6 @@
 `include "prim_assert.sv"
 `include "tl_util.svh"
+`include "muntjac_metadata_table_util.svh"
 
 module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg::*; #(
   // Number of sets is `2 ** SetsWidth`
@@ -2009,7 +2010,7 @@ module muntjac_llc import tl_pkg::*; import muntjac_pkg::*; import prim_util_pkg
               data_arb_write[DataArbIdxAcq] = 1'b1;
               data_arb_wmask[DataArbIdxAcq] = '1;
               data_arb_wdata[DataArbIdxAcq] = device_d.data;
-              metadata_arb_wdata[DataArbIdxAcq] = device_d.metadata;
+              metadata_arb_wdata[DataArbIdxAcq] = `MUNTJAC_TRANSITION_TABLE_INIT_STATE;
 
               // Hold the beat until written back.
               if (data_arb_gnt[DataArbIdxAcq]) begin
