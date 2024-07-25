@@ -459,6 +459,7 @@ module muntjac_backend import muntjac_pkg::*; #(
           meta_state_d = META_ST_STORE_REPLAY;
         end
       end
+      // À enlever, bloque jusqu'à l'écriture. Ne pas oublier le bypass / issue.
       META_ST_STORE_REPLAY: begin
         meta_store_enable = 1'b1;
         if (mem_ready) begin
